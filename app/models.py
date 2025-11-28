@@ -50,7 +50,34 @@ class UserWorkout(Base):
     week_start = Column(Date)
     week_end = Column(Date)
     week_number = Column(Integer)
-    
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+class UserExerciseFollowUp(Base):
+    __tablename__ = "user_exercise_followups"
+
+    followup_id = Column(Integer, primary_key=True, index=True)
+    user_email = Column(String, ForeignKey("user_profiles.email"), index=True)
+    # Store the date string provided in the payload (e.g. "2025-11-28")
+    date = Column(String, nullable=True)
+    # Optional day-of-week string (e.g. "friday")
+    day = Column(String, nullable=True)
+    # Store these numeric summary fields separately so analytics queries are straightforward
+    completed_exercises = Column(Integer, nullable=True)
+    completion_rate = Column(Float, nullable=True)
+    total_exercises = Column(Integer, nullable=True)
+    # Full `exercises` detail stored as JSONB for flexible querying
+    exercises = Column(JSONB, nullable=True)
+    # created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+class UserExerciseAnalysis(Base):
+    __tablename__ = "user_exercise_analyses"
+
+    analysis_id = Column(Integer, primary_key=True, index=True)
+    user_email = Column(String, ForeignKey("user_profiles.email"), index=True)
+    week_start = Column(Date, nullable=False)
+    week_end = Column(Date, nullable=False)
+    daily_stats = Column(JSONB, nullable=True)
+    advice = Column(String, nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
 class UserFoodLog(Base):
@@ -61,6 +88,16 @@ class UserFoodLog(Base):
     image_path = Column(String)  # Path to stored image
     food_analysis = Column(JSONB) # AI Output: {"food_name": "...", "calories": 500, ...}
     created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+
+# class UserExerciseLog(Base):
+#     __tablename__ = "user_exercise_logs"
+
+#     log_id = Column(Integer, primary_key=True, index=True)
+#     user_email = Column(String, ForeignKey("user_profiles.email"))
+#     image_path = Column(String)
+#     validation = Column(JSONB)  # AI output: {is_exercise: bool, confidence: float, ...}
+#     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
 class ChatHistory(Base):
     __tablename__ = "chat_history"

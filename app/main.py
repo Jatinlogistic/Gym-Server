@@ -9,6 +9,8 @@ from app.routers.calorie import router as calorie_router
 from app.routers.chatbot import router as chatbot_router
 from app.routers.gym import router as gym_router
 from app.routers.custom_diet import router as custom_diet_router
+from app.routers.exercise import router as exercise_router
+from app.routers.analysis import router as analysis_router
 
 Base.metadata.create_all(bind=engine)
 
@@ -35,6 +37,8 @@ app.include_router(calorie_router)
 app.include_router(chatbot_router)
 app.include_router(gym_router)
 app.include_router(custom_diet_router)
+app.include_router(exercise_router)
+app.include_router(analysis_router)
 
 @app.get("/")
 def home():
