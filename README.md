@@ -82,6 +82,13 @@ All API routes are namespaced under `/profile` (unless otherwise noted). Main en
 - POST /profile/custom-diet — Create or return a custom ingredient-driven diet plan
 - POST /profile/gym-suggestion — Get a gym suggestion for a user
 
+Exercise-related endpoints (new)
+- POST /profile/exercise/validate — Multipart: (email + image file). Uses the multimodal AI detector to validate whether an image contains an exercise and returns a JSON result (is_exercise, confidence, label, explanation). This endpoint is validation-only and does not persist images or results by default.
+- POST /profile/exercise/follow-up — JSON body: store daily follow-up data for a user. Required: `email`, `date` (YYYY-MM-DD). Optional: `day`, `completed_exercises`, `completion_rate`, `total_exercises`, `exercises` (JSON array). This data is persisted for later analysis.
+- POST /profile/analysis — JSON body: `{"email":"...","week_start":"YYYY-MM-DD","week_end":"YYYY-MM-DD"}` → Aggregates follow-ups for the requested week and returns a structured week summary plus an AI-generated `advice` string. Behavior:
+  - The endpoint returns a full-week `daily_stats` array (one entry per day from week_start to week_end). For days after "today" the API returns `total_exercises: 0` and `completed_exercises: 0` (future days are shown as zeros, not omitted). 
+  - The first request for a particular (email, week_start, week_end) will generate analysis using the AI and the result is cached in the `user_exercise_analyses` table. Subsequent identical requests return the stored analysis (consistency + cheaper operations).
+
 ### Example: download workout PDF
 
 ```bash
@@ -97,6 +104,8 @@ The heavy-lifting for the AI features lives inside `app/ai/`:
 - `diet_suggestion.py` — DietAssistant that returns a daily diet plan
 - `workout_suggestion.py` — WorkoutAssistant that builds a weekly workout program
 - `calorie_detector.py` — Image analysis and calorie estimator (saves logs)
+ - `exercise_detector.py` — Vision-capable AI model that verifies whether an uploaded image is an exercise (used by the `/profile/exercise/validate` endpoint)
+ - `exercise_analysis.py` — Aggregates weekly follow-ups and calls the AI to generate a short, tailored weekly advice string and structured weekly output (week_start/week_end/daily_stats/advice). Results are cached to `user_exercise_analyses`.
 - `chatbot.py` — Per-user chat assistant that keeps chat history
 - `gym_suggestion.py`, `custom_diet.py` — helpers for gym and custom diet generation
 
@@ -113,12 +122,19 @@ pytest -q
 
 There are unit tests for the PDF generator under `tests/test_workout_pdf.py`.
 
+Added tests:
+- `tests/test_exercise_detector.py` — encoder/prompt checks for the exercise detector.
+- `tests/test_exercise_router.py` — endpoint tests for the multipart validation endpoint (mocked AI).
+- `tests/test_exercise_followup.py` — tests for storing follow-up payloads (DB override in tests).
+- `tests/test_analysis.py` — aggregation, AI-invocation, caching and future-day behavior for `/profile/analysis`.
+
 ---
 
 ## 🛠️ Developer notes
 - PDF bytes generator: `app/utils/pdf.py` → `workout_plan_to_pdf_bytes(user_name, week_start, week_end, week_number, workout_plan)`.
 - The app mounts a static folder at `/static` and stores uploaded images to `app/static/images`.
 - Database tables are created automatically on app start (via `Base.metadata.create_all(bind=engine)` in `app/main.py`) — for production use migrate with a proper migration system (Alembic).
+  - Note: if you run the app locally and rely on `Base.metadata.create_all(bind=engine)`, the new tables (e.g. `user_exercise_followups`, `user_exercise_analyses`) will be created automatically. For production or CI environments use Alembic to add explicit migrations.
 
 ## 🤝 Contributing
 Feel free to open issues or pull requests. If you add new third-party integrations or model usage, update `requirements.txt` or provide a separate requirements file for reproducibility.
