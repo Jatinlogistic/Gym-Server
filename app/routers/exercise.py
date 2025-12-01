@@ -3,6 +3,7 @@ from sqlalchemy.orm import Session
 from typing import Any
 from app.database import SessionLocal
 from app.models import UserProfile, UserExerciseFollowUp
+from app.schemas.exercise_schema import FollowUpPayload, FollowUpResponse
 from app.ai.exercise_detector import ExerciseDetector
 import shutil
 import os
@@ -102,14 +103,13 @@ def validate_exercise(
     return response_payload
 
 
-
-@router.post("/follow-up", response_model=dict)
-def create_follow_up(payload: dict, db: Session = Depends(get_db)):
+@router.post("/follow-up", response_model=FollowUpResponse)
+def create_follow_up(payload: FollowUpPayload, db: Session = Depends(get_db)):
     """
     Store a follow-up payload for a user's exercise session. Expected to receive a JSON object containing
     at minimum an "email" field and the rest of the follow-up data (e.g. completed_exercises, exercises, etc.).
     """
-    email = payload.get("email")
+    email = payload.email
     if not email:
         raise HTTPException(status_code=400, detail="email is required in payload")
 
@@ -119,12 +119,13 @@ def create_follow_up(payload: dict, db: Session = Depends(get_db)):
         raise HTTPException(status_code=404, detail="User not found")
 
     # Extract structured fields and persist them into dedicated columns to assist analytics
-    date = payload.get("date")
-    day = payload.get("day")
-    completed_exercises = payload.get("completed_exercises")
-    completion_rate = payload.get("completion_rate")
-    total_exercises = payload.get("total_exercises")
-    exercises = payload.get("exercises")
+    # Pydantic model ensures these fields exist (date and email required) and optional
+    date = payload.date
+    day = payload.day
+    completed_exercises = payload.completed_exercises
+    completion_rate = payload.completion_rate
+    total_exercises = payload.total_exercises
+    exercises = payload.exercises
 
     try:
         new_followup = UserExerciseFollowUp(
@@ -142,13 +143,17 @@ def create_follow_up(payload: dict, db: Session = Depends(get_db)):
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to save follow-up: {str(e)}")
 
-    return {
-        "id": str(new_followup.followup_id),
-        # "created_at": new_followup.created_at.isoformat(),
-        "date": new_followup.date,
-        "day": new_followup.day,
-        "completed_exercises": new_followup.completed_exercises,
-        "completion_rate": new_followup.completion_rate,
-        "total_exercises": new_followup.total_exercises,
-        "exercises": new_followup.exercises,
+    # Build response using primitive Python values (avoid passing SQLAlchemy Column objects to Pydantic)
+    responce = {
+        "id": str(getattr(new_followup, "followup_id", None)),
+        "created_at": getattr(new_followup, "created_at", None),
+        "date": getattr(new_followup, "date", None),
+        "day": getattr(new_followup, "day", None),
+        "completed_exercises": getattr(new_followup, "completed_exercises", None),
+        "completion_rate": getattr(new_followup, "completion_rate", None),
+        "total_exercises": getattr(new_followup, "total_exercises", None),
+        "exercises": getattr(new_followup, "exercises", None),
     }
+
+    # Let FastAPI / Pydantic validate the returned dict via response_model
+    return responce

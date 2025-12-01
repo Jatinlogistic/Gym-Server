@@ -108,6 +108,85 @@ def analyze_week(data: dict, db: Session = Depends(get_db)):
     ).first()
 
     if existing_analysis:
+        # If the stored analysis exists but contains only zeros for days up to today,
+        # prefer any real follow-up entries that arrived later (don't mutate DB here).
+        # This avoids returning stale zero-only cached analyses when the user later
+        # submits followups for the same week.
+        existing_daily = existing_analysis.daily_stats or []
+        stored_map = {d.get("date"): d for d in existing_daily if isinstance(d, dict) and d.get("date")}
+
+        # Decide whether stored analysis has any non-zero entries for days <= today
+        stored_has_nonzero = False
+        for d in stored_map.values():
+            try:
+                t = int(d.get("total_exercises", 0) or 0)
+                c = int(d.get("completed_exercises", 0) or 0)
+            except Exception:
+                t, c = 0, 0
+            if t > 0 or c > 0:
+                stored_has_nonzero = True
+                break
+
+        # Check whether followups contain any non-zero entries for this week
+        followups_have_data = False
+        for f in followups:
+            try:
+                ft = int(getattr(f, "total_exercises", 0) or 0)
+                fc = int(getattr(f, "completed_exercises", 0) or 0)
+            except Exception:
+                ft, fc = 0, 0
+            if ft > 0 or fc > 0:
+                followups_have_data = True
+                break
+
+        # If stored analysis contains non-zero entries, keep returning cached analysis.
+        # But if stored is only zeroes and followups now have real data, prefer live followups
+        # so the user sees the updated counts. We won't update the stored analysis here.
+        if not stored_has_nonzero and followups_have_data:
+            # Build fresh returned_daily from followups up to today and zeros for future days
+            returned_daily = []
+            for day_iso in ordered_dates:
+                day_date = datetime.strptime(day_iso, "%Y-%m-%d").date()
+                if day_date > today_date:
+                    returned_daily.append({
+                        "day": day_date.strftime("%A"),
+                        "date": day_iso,
+                        "total_exercises": 0,
+                        "completed_exercises": 0,
+                    })
+                else:
+                    fobj = followup_map.get(day_iso)
+                    total = int(getattr(fobj, "total_exercises", 0) or 0)
+                    completed = int(getattr(fobj, "completed_exercises", 0) or 0)
+                    returned_daily.append({
+                        "day": day_date.strftime("%A"),
+                        "date": day_iso,
+                        "total_exercises": total,
+                        "completed_exercises": completed,
+                    })
+
+            # Try to persist the fresh daily_stats into the stored analysis so the
+            # analysis table reflects the newly-submitted followups.
+            try:
+                # assign updated daily_stats (JSONB column backed by ORM will accept a list at runtime)
+                # mypy/static-checkers may flag Column types on the class attribute — silence with type: ignore
+                existing_analysis.daily_stats = returned_daily  # type: ignore[assignment]
+                db.add(existing_analysis)
+                db.commit()
+                # refresh so returned created_at/advice are up to date
+                db.refresh(existing_analysis)
+            except Exception:
+                # If persistence fails, don't block — still return computed result
+                pass
+
+            return {
+                "id": str(existing_analysis.analysis_id),
+                "created_at": existing_analysis.created_at.isoformat() if existing_analysis.created_at is not None else None,
+                "week_start": existing_analysis.week_start,
+                "week_end": existing_analysis.week_end,
+                "daily_stats": returned_daily,
+                "advice": existing_analysis.advice,
+            }
         # Return cached analysis but ensure future days are present and set to zeros
         existing_daily = existing_analysis.daily_stats or []
         # Build a lookup from stored daily_stats by date

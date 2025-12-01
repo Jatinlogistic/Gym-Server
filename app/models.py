@@ -67,7 +67,7 @@ class UserExerciseFollowUp(Base):
     total_exercises = Column(Integer, nullable=True)
     # Full `exercises` detail stored as JSONB for flexible querying
     exercises = Column(JSONB, nullable=True)
-    # created_at = Column(DateTime(timezone=True), server_default=func.now())
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
 
 class UserExerciseAnalysis(Base):
     __tablename__ = "user_exercise_analyses"
