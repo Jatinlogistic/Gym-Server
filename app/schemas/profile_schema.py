@@ -1,5 +1,5 @@
 from pydantic import BaseModel
-from typing import List, Any
+from typing import List, Any, Optional
     
 class ProfileCreate(BaseModel):
     name: str
@@ -32,8 +32,31 @@ class ProfileCreate(BaseModel):
     city: str
     budget: str | None = None
 
-class ProfileResponse(ProfileCreate):
+class ProfileResponse(BaseModel):
     userid: int
+    email: str
+    
+    name: Optional[str] = None
+    age: Optional[int] = None
+    gender: Optional[str] = None
+    height: Optional[float] = None
+    weight: Optional[float] = None
+    goal: Optional[str] = None
+    activity_level: Optional[str] = None
+    medical_conditions: Optional[str] = None
+    injuries: Optional[str] = None
+    diet_type: Optional[str] = None
+    food_allergies: Optional[str] = None
+    food_dislikes: Optional[str] = None
+    wake_up_time: Optional[str] = None
+    sleep_time: Optional[str] = None
+    breakfast_time: Optional[str] = None
+    lunch_time: Optional[str] = None
+    dinner_time: Optional[str] = None
+    workout_time: Optional[str] = None
+    pincode: Optional[str] = None
+    city: Optional[str] = None
+    budget: Optional[str] = None
 
     class Config:
         from_attributes = True

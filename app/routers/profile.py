@@ -24,8 +24,12 @@ def get_db():
 def create_profile(data: ProfileCreate, db: Session = Depends(get_db)):
     profile = UserProfile(**data.dict())
     db.add(profile)
-    db.commit()
-    db.refresh(profile)
+    try:
+        db.commit()
+        db.refresh(profile)
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(status_code=500, detail=f"Profile creation failed: {str(e)}")
     return profile
 
 # diet-plan endpoint 
@@ -115,8 +119,13 @@ def update_profile(data: ProfileUpdate, db: Session = Depends(get_db)):
     for key, value in update_data.items():
         setattr(profile, key, value)
     
-    db.commit()
-    db.refresh(profile)
+    try:
+        db.commit()
+        db.refresh(profile)
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(status_code=500, detail=f"Update failed: {str(e)}")
+    
     return profile
 
 # Profile Summary Endpoint
