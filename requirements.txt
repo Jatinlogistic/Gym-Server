@@ -6,3 +6,4 @@ psycopg2-binary
 python-dotenv
 groq
 python-multipart
+passlib[bcrypt]

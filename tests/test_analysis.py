@@ -29,8 +29,20 @@ def make_fake_db(followups):
                 def all(self):
                     return self.followups
 
-                def first(self):
-                    return self.followups[0] if self.followups else None
+                    def first(self):
+                            # If profile is being queried, return a dummy profile so API proceeds
+                            from app.models import UserProfile
+                            if getattr(self.model, "__name__", "") == "UserProfile":
+                                class P:
+                                    email = "user@example.com"
+                                    name = None
+                                    age = None
+                                    goal = None
+                                    activity_level = None
+
+                                return P()
+
+                            return self.followups[0] if self.followups else None
 
             return Q(self._followups)
 
@@ -59,7 +71,8 @@ def test_analysis_missing_days(mock_analyze, monkeypatch):
     payload = {"email": "user@example.com", "week_start": "2025-11-24", "week_end": "2025-11-30"}
     # Simulate today's date as 2025-11-28 so future days (29,30) are zeroed
     from datetime import date as _d
-    monkeypatch.setattr(analysis_module.date, "today", lambda: _d(2025, 11, 28))
+    FakeDate = type("FakeDate", (), {"today": staticmethod(lambda: _d(2025, 11, 28))})
+    monkeypatch.setattr(analysis_module, "date", FakeDate)
 
     resp = client.post("/profile/analysis", json=payload)
 
@@ -116,7 +129,8 @@ def test_analysis_all_days(mock_analyze, monkeypatch):
     payload = {"email": "user@example.com", "week_start": "2025-11-24", "week_end": "2025-11-30"}
     # Force today's date to 2025-11-28
     from datetime import date as _d
-    monkeypatch.setattr(analysis_module.date, "today", lambda: _d(2025, 11, 28))
+    FakeDate = type("FakeDate", (), {"today": staticmethod(lambda: _d(2025, 11, 28))})
+    monkeypatch.setattr(analysis_module, "date", FakeDate)
     resp = client.post("/profile/analysis", json=payload)
 
     # Cleanup
@@ -128,7 +142,7 @@ def test_analysis_all_days(mock_analyze, monkeypatch):
     assert len(data["daily_stats"]) == 7
     # ensure Friday has the values provided
     friday = next((d for d in data["daily_stats"] if d["date"] == "2025-11-28"), None)
-    assert friday["completed_exercises"] == 1
+    assert friday is not None and friday["completed_exercises"] == 1
     assert data["advice"] == "Solid week. Try keeping recovery days consistent."
     # Future days (29 & 30) should be present but zeroed
     n29 = next((d for d in data["daily_stats"] if d["date"] == "2025-11-29"), None)
@@ -260,7 +274,8 @@ def test_cached_with_future_entries_trimmed(mock_analyze, monkeypatch):
 
     # Simulate today as 2025-11-28
     from datetime import date as _d
-    monkeypatch.setattr(analysis_module.date, "today", lambda: _d(2025, 11, 28))
+    FakeDate = type("FakeDate", (), {"today": staticmethod(lambda: _d(2025, 11, 28))})
+    monkeypatch.setattr(analysis_module, "date", FakeDate)
 
     payload = {"email": "user@example.com", "week_start": "2025-11-24", "week_end": "2025-11-30"}
     resp = client.post("/profile/analysis", json=payload)
@@ -272,3 +287,123 @@ def test_cached_with_future_entries_trimmed(mock_analyze, monkeypatch):
     # Future days should be present but zeroed
     assert any(d["date"] == "2025-11-29" for d in body["daily_stats"]) and any(d["date"] == "2025-11-30" for d in body["daily_stats"])
     assert not any(d for d in body["daily_stats"] if d["date"] in {"2025-11-29", "2025-11-30"} and d["completed_exercises"] != 0)
+
+
+@patch("app.ai.exercise_analysis.ExerciseAnalysis.analyze_week")
+def test_cached_zero_but_followups_present(mock_analyze, monkeypatch):
+    # Stored analysis is present but contains only zeros (or missing entries)
+    class FakeAnalysisZero:
+        def __init__(self):
+            from datetime import datetime
+
+            self.analysis_id = 99
+            self.user_email = "user@example.com"
+            self.week_start = "2025-11-24"
+            self.week_end = "2025-11-30"
+            # only empty/zero entries
+            self.daily_stats = [
+                {"day": "Monday", "date": "2025-11-24", "total_exercises": 0, "completed_exercises": 0},
+            ]
+            self.advice = "Old advice"
+            self.created_at = datetime.utcnow()
+
+    stored_zero = FakeAnalysisZero()
+
+    # Provide followups that include non-zero entries (e.g., Friday)
+    followups = [FakeFollowup("2025-11-28", 4, 2)]
+
+    class FakeDBMixed:
+        def __init__(self, followups, stored):
+            self._followups = followups
+            self._stored = stored
+            self.committed = False
+            self.added = []
+
+        def add(self, obj):
+            # record additions
+            self.added.append(obj)
+
+        def commit(self):
+            # simulate DB commit
+            self.committed = True
+
+        def refresh(self, obj):
+            # no-op in fake DB
+            return
+
+        def query(self, model):
+            class Q:
+                def __init__(self, model, followups, stored):
+                    self.model = model
+                    self._followups = followups
+                    self._stored = stored
+
+                def filter(self, *args, **kwargs):
+                    return self
+
+                def all(self):
+                    # followups present when querying followups
+                    from app.models import UserExerciseFollowUp
+                    if getattr(self.model, "__name__", "") == "UserExerciseFollowUp":
+                        return self._followups
+                    return []
+
+                def first(self):
+                    # when querying analysis, return stored_zero
+                    if getattr(self.model, "__name__", "") == "UserExerciseAnalysis":
+                        return self._stored
+                    # for profile lookup return a dummy profile object
+                    if getattr(self.model, "__name__", "") == "UserProfile":
+                        class P:
+                            email = "user@example.com"
+                            name = None
+                            age = None
+                            goal = None
+                            activity_level = None
+
+                        return P()
+                    return None
+
+            return Q(model, self._followups, self._stored)
+
+        def close(self):
+            return
+
+    fake_db = FakeDBMixed(followups, stored_zero)
+
+    def fake_get_db():
+        try:
+            yield fake_db
+        finally:
+            fake_db.close()
+
+    app.dependency_overrides[analysis_module.get_db] = fake_get_db
+
+    # analyzer shouldn't run because we have cached result — but cached is zeros, so we prefer followups
+    mock_analyze.return_value = {"advice": "Old advice"}
+
+    payload = {"email": "user@example.com", "week_start": "2025-11-24", "week_end": "2025-11-30"}
+    # Force today's date to 2025-11-28
+    from datetime import date as _d
+    FakeDate = type("FakeDate", (), {"today": staticmethod(lambda: _d(2025, 11, 28))})
+    monkeypatch.setattr(analysis_module, "date", FakeDate)
+
+    resp = client.post("/profile/analysis", json=payload)
+
+    app.dependency_overrides.pop(analysis_module.get_db, None)
+
+    assert resp.status_code == 200
+    body = resp.json()
+    # We should return the stored ID, and our fake DB should have saved the updated daily_stats
+    assert body["id"] == "99"
+    friday = next((d for d in body["daily_stats"] if d["date"] == "2025-11-28"), None)
+    assert friday is not None
+    assert friday["total_exercises"] == 4
+    assert friday["completed_exercises"] == 2
+    # ensure we attempted to persist the update
+    assert getattr(fake_db, "committed", False)
+    # stored object should be updated to reflect the new daily_stats
+    fobj = next((d for d in stored_zero.daily_stats if d.get("date") == "2025-11-28"), None)
+    assert fobj is not None and fobj["total_exercises"] == 4 and fobj["completed_exercises"] == 2
+    # analyzer should not have been called (we didn't regenerate analysis)
+    assert not mock_analyze.called

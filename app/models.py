@@ -129,3 +129,21 @@ class UserCustomDiet(Base):
     diet_plan = Column(JSONB, nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     
+
+class UserAuth(Base):
+    """Authentication / signup table.
+
+    Stores basic signup information. We hash passwords before storing and do
+    NOT persist plaintext confirmation passwords. Email is unique.
+    """
+
+    __tablename__ = "user_auth"
+
+    auth_id = Column(Integer, primary_key=True, index=True)
+    name = Column(String, nullable=False)
+    email = Column(String, unique=True, index=True, nullable=False)
+    phone = Column(String, index=True, nullable=True)
+    # Storing only the password hash
+    password_hash = Column(String, nullable=False)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+
