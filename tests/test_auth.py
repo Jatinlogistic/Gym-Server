@@ -36,3 +36,13 @@ def test_signup_and_login_stateless():
         assert login_resp.status_code == 200
         j = login_resp.json()
         assert j["email"] == payload["email"]
+        # Token should be returned
+        assert "access_token" in j and j["access_token"]
+
+        # Test protected endpoint /auth/me
+        token = j["access_token"]
+        headers = {"Authorization": f"Bearer {token}"}
+        me_resp = client.get("/auth/me", headers=headers)
+        assert me_resp.status_code == 200
+        mj = me_resp.json()
+        assert mj["email"] == payload["email"]

@@ -4,8 +4,15 @@ from app.database import SessionLocal
 from app.models import UserAuth, UserProfile
 from app.schemas.auth_schema import SignupRequest, SignupResponse, LoginRequest, LoginResponse
 from passlib.context import CryptContext
+from jose import jwt, JWTError
+from datetime import datetime, timedelta
+from fastapi.security import OAuth2PasswordBearer
+from app.config import settings
 
 router = APIRouter(prefix="/auth", tags=["Auth"])
+
+# OAuth2 scheme (reads Authorization: Bearer <token>)
+oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/auth/login")
 
 
 def get_db():
@@ -26,6 +33,17 @@ def hash_password(password: str) -> str:
 
 def verify_password(plain: str, hashed: str) -> bool:
     return pwd_context.verify(plain, hashed)
+
+
+def create_access_token(subject: str, expires_delta: timedelta | None = None) -> str:
+    """Create a JWT access token with given subject (usually email) and expiry."""
+    if expires_delta:
+        expire = datetime.utcnow() + expires_delta
+    else:
+        expire = datetime.utcnow() + timedelta(hours=settings.JWT_EXPIRY_HOURS)
+
+    payload = {"sub": subject, "exp": expire}
+    return jwt.encode(payload, settings.JWT_SECRET, algorithm=settings.JWT_ALGORITHM)
 
 
 @router.post("/signup", response_model=SignupResponse)
@@ -76,4 +94,33 @@ def login(data: LoginRequest, db: Session = Depends(get_db)):
     if not verify_password(data.password, user.password_hash):
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid credentials")
 
-    return LoginResponse(auth_id=user.auth_id, name=user.name, email=user.email)
+    # create JWT valid for configured expiry (7 days default)
+    token = create_access_token(subject=user.email)
+    return LoginResponse(auth_id=user.auth_id, name=user.name, email=user.email, access_token=token, token_type="bearer")
+
+
+def get_current_user(token: str = Depends(oauth2_scheme), db: Session = Depends(get_db)) -> UserAuth:
+    """Dependency that returns the authenticated UserAuth instance or raises 401."""
+    credentials_exception = HTTPException(
+        status_code=status.HTTP_401_UNAUTHORIZED,
+        detail="Could not validate credentials",
+        headers={"WWW-Authenticate": "Bearer"},
+    )
+
+    try:
+        payload = jwt.decode(token, settings.JWT_SECRET, algorithms=[settings.JWT_ALGORITHM])
+        sub = payload.get("sub")
+        if sub is None:
+            raise credentials_exception
+    except JWTError:
+        raise credentials_exception
+
+    user = db.query(UserAuth).filter(UserAuth.email == sub).first()
+    if not user:
+        raise credentials_exception
+    return user
+
+
+@router.get("/me")
+def read_me(current_user: UserAuth = Depends(get_current_user)):
+    return {"auth_id": current_user.auth_id, "name": current_user.name, "email": current_user.email}

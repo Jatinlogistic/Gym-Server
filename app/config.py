@@ -9,9 +9,11 @@ class Settings:
     BASE_URL: str = os.getenv("BASE_URL", "")
 
     # JWT
-    # JWT_SECRET: str = os.getenv("JWT_SECRET")
-    # JWT_ALGORITHM: str = os.getenv("JWT_ALGORITHM", "HS256")
-    # JWT_EXPIRY: int = int(os.getenv("JWT_EXPIRY", 24))
+    # JWT config (defaults are development-friendly; set via environment in production)
+    JWT_SECRET: str = os.getenv("JWT_SECRET", "change-me-in-production")
+    JWT_ALGORITHM: str = os.getenv("JWT_ALGORITHM", "HS256")
+    # Expiry in hours by default; we'll use 24*7 for 7 days in code when needed
+    JWT_EXPIRY_HOURS: int = int(os.getenv("JWT_EXPIRY_HOURS", 24 * 7))
     
     # Groq AI
     GROQ_API_KEY: str = os.getenv("GROQ_API_KEY", "")
