@@ -75,8 +75,9 @@ def signup(data: SignupRequest, db: Session = Depends(get_db)):
 
     db.commit() 
     db.refresh(auth)
-
-    return SignupResponse(auth_id=auth.auth_id, name=auth.name, email=auth.email, phone=auth.phone)
+    
+    token = create_access_token(subject=auth.email)
+    return SignupResponse(auth_id=auth.auth_id, name=auth.name, email=auth.email, phone=auth.phone, access_token=token, token_type="bearer")
 
 
 @router.post("/login", response_model=LoginResponse)

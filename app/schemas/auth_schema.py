@@ -14,7 +14,8 @@ class SignupResponse(BaseModel):
     name: str
     email: EmailStr
     phone: str | None = None
-
+    access_token: str | None = None
+    token_type: str | None = "bearer"
 
 class LoginRequest(BaseModel):
     username: str  # email or phone
