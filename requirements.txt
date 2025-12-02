@@ -7,5 +7,6 @@ python-dotenv
 groq
 python-multipart
 email-validator
-passlib[bcrypt]
+passlib[argon2]==1.7.4
+argon2-cffi==21.3.0
 python-jose[cryptography]
