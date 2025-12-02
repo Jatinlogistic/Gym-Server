@@ -6,5 +6,6 @@ psycopg2-binary
 python-dotenv
 groq
 python-multipart
+email-validator
 passlib[bcrypt]
 python-jose[cryptography]

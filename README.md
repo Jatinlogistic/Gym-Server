@@ -37,10 +37,12 @@ A FastAPI backend that provides fitness and diet services powered by helper AI m
 2. Install runtime dependencies (FastAPI, Uvicorn, SQLAlchemy, etc.)
 
   ```bash
-  pip install fastapi uvicorn sqlalchemy psycopg2-binary python-dotenv reportlab
+   pip install -r requirements.txt
   ```
 
   Note: `requirements.txt` currently lists only `reportlab`. You may want to freeze the full project dependencies into that file after creating an environment.
+  
+  Important: Pydantic's EmailStr requires the `email-validator` package (it's an optional dependency). If you see an error like "EmailStr requires 'email-validator'" or similar on deployment, make sure your deployment installs `email-validator` (added to `requirements.txt` in this repo). You can also use the extra in a requirements line `pydantic[email]`, but adding `email-validator` directly is more explicit and to-the-point.
 
 3. Create an `.env` file in the project root and provide at least the `DB_URL`. Example `.env`:
 
