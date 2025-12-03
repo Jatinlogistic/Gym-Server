@@ -6,9 +6,10 @@ from sqlalchemy import func
 from datetime import date
 from app.ai.diet_suggestion import DietAssistant
 from app.database import SessionLocal
-from app.models import UserProfile, UserDiet, UserWorkout
+from app.models import UserProfile, UserDiet, UserWorkout, UserAuth
 from app.schemas.profile_schema import ProfileCreate, ProfileResponse, ProfileUpdate
 from sqlalchemy import text
+from app.routers.auth import get_current_user
 
 router = APIRouter(prefix="/profile", tags=["Profile"])
 
@@ -21,9 +22,19 @@ def get_db():
 
 # profile creation endpoint
 @router.post("/", response_model=ProfileResponse)
-def create_profile(data: ProfileCreate, db: Session = Depends(get_db)):
-    profile = UserProfile(**data.dict())
-    db.add(profile)
+def create_or_update_profile(data: ProfileCreate, db: Session = Depends(get_db)):
+    # Check if profile already exists
+    profile = db.query(UserProfile).filter(UserProfile.email == data.email).first()
+    
+    if profile:
+        # Update existing profile instead of creating new
+        for key, value in data.dict(exclude_unset=True).items():
+            setattr(profile, key, value)
+    else:
+        # Create new profile
+        profile = UserProfile(**data.dict())
+        db.add(profile)
+
     try:
         db.commit()
         db.refresh(profile)
@@ -36,6 +47,7 @@ def create_profile(data: ProfileCreate, db: Session = Depends(get_db)):
 @router.post("/diet-plan", response_model=dict)
 def get_diet(data: dict, db: Session = Depends(get_db)):
 
+    current_user: UserAuth = Depends(get_current_user)
     name = data.get("name")
     email = data.get("email")
     if not name or not email:
@@ -51,7 +63,7 @@ def get_diet(data: dict, db: Session = Depends(get_db)):
 
     today = date.today()
     existing_diet = db.query(UserDiet).filter(
-        UserDiet.user_email == email,
+        UserDiet.user_email == current_user.email,
         func.date(UserDiet.created_at) == today
     ).first()
 
@@ -64,7 +76,7 @@ def get_diet(data: dict, db: Session = Depends(get_db)):
 
     # Fetch previous diet plan for context
     latest_past_diet = db.query(UserDiet).filter(
-        UserDiet.user_email == email
+        UserDiet.user_email == current_user.email
     ).order_by(UserDiet.created_at.desc()).first()
 
     previous_date = "N/A"
@@ -107,46 +119,39 @@ def get_diet(data: dict, db: Session = Depends(get_db)):
         "diet_plan": diet_plan
     }
 
+
 @router.patch("/update", response_model=ProfileResponse)
-def update_profile(data: ProfileUpdate, db: Session = Depends(get_db)):
-    profile = db.query(UserProfile).filter(UserProfile.email == data.email).first()
+def update_profile(
+    data: ProfileUpdate,
+    current_user: UserAuth = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    profile = db.query(UserProfile).filter(UserProfile.email == current_user.email).first()
     if not profile:
-        raise HTTPException(status_code=404, detail="User not found")
-    
-    update_data = data.dict(exclude_unset=True)
-    update_data.pop("email", None) # Prevent updating email key itself
-    
-    for key, value in update_data.items():
+        raise HTTPException(status_code=404, detail="User profile not found")
+
+    for key, value in data.dict(exclude_unset=True).items():
         setattr(profile, key, value)
-    
-    try:
-        db.commit()
-        db.refresh(profile)
-    except Exception as e:
-        db.rollback()
-        raise HTTPException(status_code=500, detail=f"Update failed: {str(e)}")
-    
+
+    db.commit()
+    db.refresh(profile)
     return profile
 
 # Profile Summary Endpoint
 @router.post("/summary", response_model=dict)
-def get_profile_summary(data: dict, db: Session = Depends(get_db)):
+def get_profile_summary(
+    current_user: UserAuth = Depends(get_current_user),  # JWT auth dependency
+    db: Session = Depends(get_db)
+):
     """
-    Get full profile summary including basic info, goals, and latest plan status.
+    Get full profile summary for the authenticated user.
+    No need to send name/email in body.
     """
-    name = data.get("name")
-    email = data.get("email")
+    email = current_user.email
 
-    if not name or not email:
-        raise HTTPException(status_code=400, detail="Name and email are required")
-
-    profile = db.query(UserProfile).filter(
-        UserProfile.name == name,
-        UserProfile.email == email
-    ).first()
-
+    profile = db.query(UserProfile).filter(UserProfile.email == email).first()
     if not profile:
-        raise HTTPException(status_code=404, detail="User not found")
+        raise HTTPException(status_code=404, detail="User profile not found")
 
     # Fetch latest diet plan date
     latest_diet = db.query(UserDiet).filter(
