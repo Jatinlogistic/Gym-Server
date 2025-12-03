@@ -1,9 +1,11 @@
 # ...existing code...
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
+from sqlalchemy import func
 from app.database import SessionLocal
 from app.models import UserProfile, GymSuggestion
 from app.ai.gym_suggestion import GymAssistant
+from datetime import date
 
 router = APIRouter(prefix="/profile", tags=["Gym"])
 
@@ -25,7 +27,24 @@ def create_gym_suggestion(data: dict, db: Session = Depends(get_db)):
     if not profile:
         raise HTTPException(status_code=404, detail="User profile not found")
 
-    # Map DB model fields correctly
+    today = date.today()
+
+    # Check if suggestion exists for today's date
+    existing_suggestion = (
+        db.query(GymSuggestion)
+        .filter(GymSuggestion.user_email == email)
+        .filter(func.date(GymSuggestion.timestamp) == today)
+        .first()
+    )
+
+    if existing_suggestion:
+        return {
+            "id": existing_suggestion.id,
+            "date": existing_suggestion.timestamp,
+            "suggestion": existing_suggestion.suggestion
+        }
+
+    # Generate new suggestion if not found
     user_data = {
         "location": profile.city or "Rajkot",
         "pincode": profile.pincode or "",
@@ -40,7 +59,7 @@ def create_gym_suggestion(data: dict, db: Session = Depends(get_db)):
     gym_rec = GymSuggestion(
         user_email=email,
         suggestion=suggestion.get("suggestion"),
-        raw_output=suggestion.get("raw_output"),
+        raw_output=suggestion.get("raw_output")
     )
     db.add(gym_rec)
     db.commit()
@@ -48,6 +67,6 @@ def create_gym_suggestion(data: dict, db: Session = Depends(get_db)):
 
     return {
         "id": gym_rec.id,
-        "date": suggestion["date"],
-        "suggestion": suggestion["suggestion"]
+        "date": gym_rec.timestamp,
+        "suggestion": suggestion.get("suggestion")
     }
