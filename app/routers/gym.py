@@ -33,14 +33,14 @@ def create_gym_suggestion(data: dict, db: Session = Depends(get_db)):
     existing_suggestion = (
         db.query(GymSuggestion)
         .filter(GymSuggestion.user_email == email)
-        .filter(func.date(GymSuggestion.timestamp) == today)
+        .filter(func.date(GymSuggestion.created_at) == today)
         .first()
     )
 
     if existing_suggestion:
         return {
             "id": existing_suggestion.id,
-            "date": existing_suggestion.timestamp,
+            "date": existing_suggestion.created_at,
             "suggestion": existing_suggestion.suggestion
         }
 
@@ -67,6 +67,6 @@ def create_gym_suggestion(data: dict, db: Session = Depends(get_db)):
 
     return {
         "id": gym_rec.id,
-        "date": gym_rec.timestamp,
+        "date": gym_rec.created_at,
         "suggestion": suggestion.get("suggestion")
     }
