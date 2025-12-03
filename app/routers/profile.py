@@ -45,14 +45,19 @@ def create_or_update_profile(data: ProfileCreate, db: Session = Depends(get_db))
 
 # diet-plan endpoint 
 @router.post("/diet-plan", response_model=dict)
-def get_diet(data: dict, db: Session = Depends(get_db)):
-
-    current_user: UserAuth = Depends(get_current_user)
+def get_diet(
+    data: dict,
+    current_user: UserAuth = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
     name = data.get("name")
     email = data.get("email")
+
+    # Validate request body
     if not name or not email:
         raise HTTPException(status_code=400, detail="Name and email are required")
 
+    # Fetch user profile from DB using requested email
     profile = db.query(UserProfile).filter(
         UserProfile.name == name,
         UserProfile.email == email
@@ -61,9 +66,15 @@ def get_diet(data: dict, db: Session = Depends(get_db)):
     if not profile:
         raise HTTPException(status_code=404, detail="User not found")
 
+    # Security check → ensure user is updating THEIR OWN DIET
+    if email != current_user.email:
+        raise HTTPException(status_code=401, detail="Unauthorized request")
+
     today = date.today()
+
+    # Check if today's diet already exists
     existing_diet = db.query(UserDiet).filter(
-        UserDiet.user_email == current_user.email,
+        UserDiet.user_email == email,
         func.date(UserDiet.created_at) == today
     ).first()
 
@@ -74,21 +85,15 @@ def get_diet(data: dict, db: Session = Depends(get_db)):
             "diet_plan": existing_diet.diet_plan
         }
 
-    # Fetch previous diet plan for context
+    # Fetch previous plan for context
     latest_past_diet = db.query(UserDiet).filter(
-        UserDiet.user_email == current_user.email
+        UserDiet.user_email == email
     ).order_by(UserDiet.created_at.desc()).first()
 
-    previous_date = "N/A"
-    yesterday_plan = "None"
+    previous_date = str(latest_past_diet.created_at.date()) if latest_past_diet else "N/A"
+    yesterday_plan = latest_past_diet.diet_plan if latest_past_diet else "None"
 
-    if latest_past_diet:
-        previous_date = str(latest_past_diet.created_at.date())
-        # Ensure plan is stringified for prompt
-        import json
-        yesterday_plan = json.dumps(latest_past_diet.diet_plan)
-
-    # 🔥 Send ALL profile data
+    # Send full user profile data to AI
     user_data = {
         "name": profile.name,
         "email": profile.email,
@@ -108,6 +113,7 @@ def get_diet(data: dict, db: Session = Depends(get_db)):
     assistant = DietAssistant()
     diet_plan = assistant.get_diet_suggestion(user_data, current_date=today)
 
+    # Store new diet plan
     user_diet = UserDiet(user_email=email, diet_plan=diet_plan)
     db.add(user_diet)
     db.commit()
