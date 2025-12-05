@@ -40,11 +40,18 @@ Rules:
 
 Do not include any key named ingredients anywhere in the returned object.
 
-Ingredients should appear only as food names within the "items" arrays.
+Ingredients should appear only as food names inside the "items" arrays.
 
-No additional properties are allowed (ex: no substitutions, no instructions, no extra metadata keys).
+No additional properties are allowed (no substitutions, no extra metadata).
 
-The object must only include the keys: date, breakfast, lunch, and dinner.
+The object must include only these keys:
+date, breakfast, lunch, dinner
+
+⚠️ Today's plan must be significantly different from {yesterday_plan}.
+Do not repeat the same meals, items, or recipes.
+
+⚠️ You must include the following user-provided ingredients somewhere in today’s plan: {ingredients}.
+You may add other foods as needed, but the user ingredients must appear at least once in any meal.
 
 Available format tokens:
 {current_date} 
